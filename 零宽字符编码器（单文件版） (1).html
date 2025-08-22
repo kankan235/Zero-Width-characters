@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="auto">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>零宽字符编码器 / 解码器（单文件 · 深色/多语言/书签脚本）</title>
+  <style>
+    :root{
+      --bg:#fafafa; --fg:#111; --muted:#666; --card:#fff; --border:#eaeaea;
+      --shadow:0 3px 20px rgba(0,0,0,.04); --radius:14px; --accent:#8ab4f8;
+    }
+    @media (prefers-color-scheme: dark){
+      :root{ --bg:#0b0b0c; --fg:#f1f1f1; --muted:#b4b4b4; --card:#151518; --border:#2a2a2f; --shadow:0 3px 20px rgba(0,0,0,.35); }
+    }
+    [data-theme="light"]{ --bg:#fafafa; --fg:#111; --muted:#666; --card:#fff; --border:#eaeaea; --shadow:0 3px 20px rgba(0,0,0,.04); }
+    [data-theme="dark"]{ --bg:#0b0b0c; --fg:#f1f1f1; --muted:#b4b4b4; --card:#151518; --border:#2a2a2f; --shadow:0 3px 20px rgba(0,0,0,.35); }
+
+    html,body{height:100%}
+    body{font:16px/1.65 system-ui, -apple-system, Segoe UI, Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;margin:0;background:var(--bg);color:var(--fg)}
+    .wrap{max-width:980px;margin:36px auto;padding:0 16px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    h1{font-size:28px;margin:0}
+    .toolbar{display:flex;gap:8px;align-items:center}
+    select,button{appearance:none;border-radius:12px;border:1px solid var(--border);padding:10px 12px;background:var(--card);color:var(--fg)}
+    button{cursor:pointer}
+    .iconbtn{display:inline-flex;align-items:center;gap:8px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 16px;margin:16px 0}
+    label{display:block;margin:8px 0 6px;font-weight:600}
+    textarea,input{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:var(--radius);padding:12px;outline:none;min-height:120px;background:var(--card);color:var(--fg)}
+    textarea:focus,input:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 50%, transparent)}
+    .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+    .muted{color:var(--muted);font-size:14px}
+    .tips{font-size:14px;color:var(--fg)}
+    .ok{color:#3ddc84}
+    .warn{color:#f7b955}
+    .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
+    a.bookmarklet{display:inline-block;padding:8px 12px;border:1px dashed var(--border);border-radius:12px;text-decoration:none}
+    .footer{color:var(--muted);font-size:14px;margin-top:8px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1 id="t_title">零宽字符编码器 / 解码器</h1>
+      <div class="toolbar">
+        <label for="lang" class="muted" id="t_lang_label" style="margin-right:4px">语言</label>
+        <select id="lang" title="Language">
+          <option value="zh-CN">简体中文</option>
+          <option value="zh-TW">繁體中文</option>
+        </select>
+        <button id="themeBtn" class="iconbtn" title="切换主题">
+          <span id="themeIcon">🌙</span><span id="t_theme">深色</span>
+        </button>
+      </div>
+    </header>
+    <p class="muted" id="t_sub">把看得见的文字编码成 <span class="mono">U+200B / U+200C / U+200D / U+2060</span> 等零宽字符；多用于“只显示名字”的场景。</p>
+
+    <div class="card">
+      <label for="plain" id="t_plain_label">要隐藏的明文</label>
+      <textarea id="plain" placeholder="例如：随便写点什么"></textarea>
+      <div class="row">
+        <button id="btn-encode">生成零宽字符并复制</button>
+        <button id="btn-clear" class="secondary">清空</button>
+      </div>
+      <p id="encode-status" class="muted"></p>
+    </div>
+
+    <div class="card">
+      <label for="zw" id="t_zw_label">零宽字符（不可见）</label>
+      <textarea id="zw" placeholder="把不可见的内容粘贴到这里可解码或检查"></textarea>
+      <div class="row">
+        <button id="btn-decode" class="secondary">解码到上面</button>
+        <button id="btn-visualize" class="secondary">可视化查看</button>
+        <button id="btn-copyzw">复制当前零宽字符</button>
+      </div>
+      <p class="muted" id="t_len">提示：不可见是正常的。长度：<span id="zw-len" class="mono">0</span> 字符。</p>
+      <div id="visual" class="muted" style="display:none;margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <h3 id="t_bm_title" style="margin:0 0 8px">一键书签脚本（可见 → 不可见）</h3>
+      <p class="tips" id="t_bm_desc">把下面的链接拖拽到浏览器书签栏：在任意页面点击它，会把你选中的文字（或弹出输入框）转换为零宽字符并复制到剪贴板。</p>
+      <p><a id="bm" class="bookmarklet" href="#">可见→不可见（拖到书签栏）</a></p>
+    </div>
+
+    <div class="card">
+      <div class="tips" id="t_usage">
+        <strong>用法</strong>：在上方输入任意文本，点“生成并复制”，然后把得到的（看不见的）字符串粘贴到 <em>微软账号</em> 的“姓/Last name”字段即可。若网站对零宽字符做清洗，这个方法可能无效。
+      </div>
+    </div>
+
+    <p class="footer" id="t_footer">Made for local/offline use · 不上传任何数据。</p>
+  </div>
+
+<script>
+(function(){
+  // ===== i18n =====
+  const I18N = {
+    'zh-CN': {
+      title: '零宽字符编码器 / 解码器',
+      sub: '把看得见的文字编码成 <span class="mono">U+200B / U+200C / U+200D / U+2060</span> 等零宽字符；多用于“只显示名字”的场景。',
+      lang_label: '语言',
+      theme: '深色',
+      plain_label: '要隐藏的明文',
+      btn_encode: '生成零宽字符并复制',
+      btn_clear: '清空',
+      zw_label: '零宽字符（不可见）',
+      btn_decode: '解码到上面',
+      btn_visual: '可视化查看',
+      btn_copyzw: '复制当前零宽字符',
+      len_tip: '提示：不可见是正常的。长度：',
+      bm_title: '一键书签脚本（可见 → 不可见）',
+      bm_desc: '把下面的链接拖拽到浏览器书签栏：在任意页面点击它，会把你选中的文字（或弹出输入框）转换为零宽字符并复制到剪贴板。',
+      bm_link: '可见→不可见（拖到书签栏）',
+      usage: '<strong>用法</strong>：在上方输入任意文本，点“生成并复制”，然后把得到的（看不见的）字符串粘贴到 <em>微软账号</em> 的“姓/Last name”字段即可。若网站对零宽字符做清洗，这个方法可能无效。',
+      footer: 'Made for local/offline use · 不上传任何数据。',
+      copied: '已生成并复制到剪贴板（看不见是正常的）',
+      copy_fail: '已生成，但复制失败：请手动全选复制',
+      decoded: '已解码到上方文本框'
+    },
+    'zh-TW': {
+      title: '零寬字元編碼器 / 解碼器',
+      sub: '把看得見的文字編碼成 <span class="mono">U+200B / U+200C / U+200D / U+2060</span> 等零寬字元；多用於「只顯示名字」的場景。',
+      lang_label: '語言',
+      theme: '深色',
+      plain_label: '要隱藏的明文',
+      btn_encode: '產生零寬字元並複製',
+      btn_clear: '清空',
+      zw_label: '零寬字元（不可見）',
+      btn_decode: '解碼到上面',
+      btn_visual: '視覺化檢視',
+      btn_copyzw: '複製目前的零寬字元',
+      len_tip: '提示：不可見是正常的。長度：',
+      bm_title: '一鍵書籤腳本（可見 → 不可見）',
+      bm_desc: '把下面的連結拖曳到瀏覽器書籤列：在任何頁面點它，會把你選取的文字（或彈出輸入框）轉換為零寬字元並複製到剪貼簿。',
+      bm_link: '可見→不可見（拖到書籤列）',
+      usage: '<strong>用法</strong>：在上方輸入任意文字，點「產生並複製」，然後把得到的（看不見的）字串貼到 <em>微軟帳號</em> 的「姓/Last name」欄位即可。若網站對零寬字元做清洗，此方法可能無效。',
+      footer: '僅供本地/離線使用 · 不上傳任何資料。',
+      copied: '已產生並複製到剪貼簿（看不見是正常的）',
+      copy_fail: '已產生，但複製失敗：請手動全選複製',
+      decoded: '已解碼到上方文字框'
+    }
+  };
+
+  // ===== Theme handling =====
+  const THEME_KEY = 'zw-theme'; // 'light' | 'dark' | 'auto'
+  const LANG_KEY  = 'zw-lang';  // 'zh-CN' | 'zh-TW'
+
+  const root = document.documentElement;
+  const themeBtn = document.getElementById('themeBtn');
+  const themeIcon = document.getElementById('themeIcon');
+  const t_theme = document.getElementById('t_theme');
+  const langSel = document.getElementById('lang');
+
+  function applyTheme(mode){
+    // mode: 'light' | 'dark' | 'auto'
+    root.setAttribute('data-theme', mode);
+    localStorage.setItem(THEME_KEY, mode);
+    // icon/text
+    const dark = (mode === 'dark') || (mode === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+    themeIcon.textContent = dark ? '☀️' : '🌙';
+  }
+
+  function toggleTheme(){
+    const cur = localStorage.getItem(THEME_KEY) || 'auto';
+    const next = cur === 'light' ? 'dark' : cur === 'dark' ? 'auto' : 'light';
+    applyTheme(next);
+  }
+
+  // ===== Zero-width encode/decode =====
+  const MAP = { ZERO:'\u200B', ONE:'\u200C', SEP:'\u200D', WRAP:'\u2060' };
+  function encodeToZW(text){
+    const bytes = new TextEncoder().encode(text);
+    let out = MAP.WRAP;
+    for (let i=0;i<bytes.length;i++){
+      const bits = bytes[i].toString(2).padStart(8,'0');
+      for (const b of bits) out += (b==='1') ? MAP.ONE : MAP.ZERO;
+      if (i < bytes.length - 1) out += MAP.SEP;
+    }
+    out += MAP.WRAP; return out;
+  }
+  function decodeFromZW(zw){
+    const clean = zw.replace(/[^\u200B\u200C\u200D\u2060]/g,'').replace(/\u2060/g,'');
+    if (!clean) return '';
+    const chunks = clean.split(MAP.SEP).filter(Boolean);
+    const bytes = chunks.map(bits => parseInt([...bits].map(ch => ch===MAP.ONE?'1':'0').join(''), 2));
+    return new TextDecoder().decode(new Uint8Array(bytes));
+  }
+  function visualizeZW(zw){
+    const s = zw.replace(/[^\u200B\u200C\u200D\u2060]/g,'')
+                .replace(new RegExp(MAP.WRAP,'g'), '')
+                .replace(new RegExp(MAP.ZERO,'g'), '·')
+                .replace(new RegExp(MAP.ONE,'g'),  '•')
+                .replace(new RegExp(MAP.SEP,'g'),  '|');
+    return s || '(空)';
+  }
+
+  // ===== Bookmarklet =====
+  function setBookmarklet(){
+    const code = '(()=>{var Z0="\\u200B",Z1="\\u200C",S="\\u200D",W="\\u2060";function E(t){var b=(new TextEncoder).encode(t),o=W;for(var i=0;i<b.length;i++){var x=b[i].toString(2).padStart(8,"0");for(var j=0;j<x.length;j++)o+=x[j]==="1"?Z1:Z0;if(i<b.length-1)o+=S}return o+W}var t=String(window.getSelection&&window.getSelection())||prompt("输入要转换的文本 / Enter text to encode","");if(!t)return;var zw=E(t);if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(zw).then(function(){alert("已复制到剪贴板 / Copied to clipboard")}).catch(function(){alert("复制失败，请手动粘贴 / Copy failed\n"+zw)})}else{var ta=document.createElement("textarea");ta.value=zw;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");alert("已复制到剪贴板 / Copied") }catch(e){alert(zw)}finally{document.body.removeChild(ta)}}})();';
+    document.getElementById('bm').setAttribute('href','javascript:' + code);
+  }
+
+  // ===== UI bindings =====
+  const el = {
+    plain: document.getElementById('plain'),
+    zw: document.getElementById('zw'),
+    btnEncode: document.getElementById('btn-encode'),
+    btnCopyZW: document.getElementById('btn-copyzw'),
+    btnDecode: document.getElementById('btn-decode'),
+    btnVisual: document.getElementById('btn-visualize'),
+    btnClear: document.getElementById('btn-clear'),
+    status: document.getElementById('encode-status'),
+    visual: document.getElementById('visual'),
+    len: document.getElementById('zw-len')
+  };
+
+  async function copy(text){
+    try{ await navigator.clipboard.writeText(text); return true; }
+    catch(e){ const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); try{ document.execCommand('copy'); return true; } catch(_){ return false; } finally { document.body.removeChild(ta); } }
+  }
+  function updateLen(){ document.getElementById('zw-len').textContent = (el.zw.value||'').length; }
+
+  // i18n render
+  function renderI18N(){
+    const lang = localStorage.getItem(LANG_KEY) || 'zh-CN';
+    const dict = I18N[lang] || I18N['zh-CN'];
+    document.getElementById('t_title').innerHTML = dict.title;
+    document.getElementById('t_sub').innerHTML = dict.sub;
+    document.getElementById('t_lang_label').textContent = dict.lang_label;
+    document.getElementById('t_theme').textContent = dict.theme;
+    document.getElementById('t_bm_title').textContent = dict.bm_title;
+    document.getElementById('t_bm_desc').textContent  = dict.bm_desc;
+    document.getElementById('bm').textContent = dict.bm_link;
+    document.getElementById('t_usage').innerHTML = dict.usage;
+    document.getElementById('t_footer').textContent = dict.footer;
+    document.getElementById('t_plain_label').textContent = dict.plain_label;
+    document.getElementById('t_zw_label').textContent = dict.zw_label;
+    el.btnEncode.textContent = dict.btn_encode;
+    el.btnClear.textContent = dict.btn_clear;
+    el.btnDecode.textContent = dict.btn_decode;
+    el.btnVisual.textContent = dict.btn_visual;
+    el.btnCopyZW.textContent = dict.btn_copyzw;
+    document.getElementById('t_len').innerHTML = dict.len_tip + '<span id="zw-len" class="mono">' + (el.zw.value||'').length + '</span> 字符。';
+  }
+
+  // Events
+  el.btnEncode.addEventListener('click', async () => {
+    const t = el.plain.value || '';
+    const zw = encodeToZW(t);
+    el.zw.value = zw; updateLen();
+    const ok = await copy(zw);
+    const lang = localStorage.getItem(LANG_KEY) || 'zh-CN';
+    const dict = I18N[lang];
+    el.status.innerHTML = ok ? `<span class="ok">${dict.copied}</span>` : `<span class="warn">${dict.copy_fail}</span>`;
+  });
+  el.btnCopyZW.addEventListener('click', async () => {
+    const ok = await copy(el.zw.value || '');
+    const dict = I18N[localStorage.getItem(LANG_KEY)||'zh-CN'];
+    el.status.innerHTML = ok ? `<span class="ok">${dict.copied}</span>` : `<span class="warn">${dict.copy_fail}</span>`;
+  });
+  el.btnDecode.addEventListener('click', () => {
+    const plain = decodeFromZW(el.zw.value || '');
+    el.plain.value = plain;
+    const dict = I18N[localStorage.getItem(LANG_KEY)||'zh-CN'];
+    el.status.textContent = dict.decoded;
+  });
+  el.btnVisual.addEventListener('click', () => {
+    const visible = el.visual.style.display !== 'none';
+    if (visible) {
+      el.visual.style.display = 'none';
+      el.btnVisual.textContent = (I18N[localStorage.getItem(LANG_KEY)||'zh-CN'].btn_visual);
+    } else {
+      el.visual.textContent = visualizeZW(el.zw.value || '');
+      el.visual.style.display = 'block';
+      el.btnVisual.textContent = '×';
+    }
+  });
+  el.btnClear.addEventListener('click', () => { el.plain.value=''; el.zw.value=''; el.status.textContent=''; el.visual.style.display='none'; updateLen(); });
+  el.zw.addEventListener('input', updateLen);
+
+  themeBtn.addEventListener('click', toggleTheme);
+  langSel.addEventListener('change', () => { localStorage.setItem(LANG_KEY, langSel.value); renderI18N(); });
+
+  // Init
+  // theme
+  applyTheme(localStorage.getItem(THEME_KEY) || 'auto');
+  // language
+  const savedLang = localStorage.getItem(LANG_KEY) || (navigator.language && navigator.language.startsWith('zh-TW') ? 'zh-TW' : 'zh-CN');
+  localStorage.setItem(LANG_KEY, savedLang); langSel.value = savedLang; renderI18N();
+  // bookmarklet
+  setBookmarklet();
+  updateLen();
+})();
+</script>
+</body>
+</html>
