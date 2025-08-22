@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>零宽字符编码器 / 解码器（单文件）</title>
+  <style>
+    :root{--radius:14px}
+    html,body{height:100%}
+    body{font:16px/1.65 system-ui, -apple-system, Segoe UI, Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;margin:0;background:#fafafa;color:#111}
+    .wrap{max-width:900px;margin:36px auto;padding:0 16px}
+    h1{font-size:28px;margin:0 0 8px}
+    p.meta{margin:0 0 20px;color:#666}
+    .card{background:#fff;border:1px solid #eaeaea;border-radius:var(--radius);box-shadow:0 3px 20px rgba(0,0,0,.04);padding:18px 16px;margin:16px 0}
+    label{display:block;margin:8px 0 6px;font-weight:600}
+    textarea,input{width:100%;box-sizing:border-box;border:1px solid #ddd;border-radius:var(--radius);padding:12px 12px 12px 12px;outline:none;min-height:120px;background:#fff}
+    textarea:focus,input:focus{border-color:#8ab4f8;box-shadow:0 0 0 3px rgba(138,180,248,.35)}
+    .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+    button{appearance:none;border:1px solid #ddd;border-radius:12px;padding:10px 14px;background:#111;color:#fff;cursor:pointer}
+    button.secondary{background:#fff;color:#111}
+    button:active{transform:translateY(1px)}
+    .muted{color:#666;font-size:14px}
+    .tips{font-size:14px;color:#444}
+    .ok{color:#0a7d32}
+    .warn{color:#b45309}
+    .footer{color:#666;font-size:14px}
+    .inline{display:inline-block}
+    .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>零宽字符编码器 / 解码器</h1>
+    <p class="meta">把看得见的文字编码成 <span class="mono">U+200B / U+200C / U+200D / U+2060</span> 等零宽字符；多用于“只显示名字”的场景。</p>
+
+    <div class="card">
+      <label for="plain">要隐藏的明文</label>
+      <textarea id="plain" placeholder="例如：随便写点什么"></textarea>
+      <div class="row">
+        <button id="btn-encode">生成零宽字符并复制</button>
+        <button id="btn-clear" class="secondary">清空</button>
+      </div>
+      <p id="encode-status" class="muted"></p>
+    </div>
+
+    <div class="card">
+      <label for="zw">零宽字符（不可见）</label>
+      <textarea id="zw" placeholder="把不可见的内容粘贴到这里可解码或检查"></textarea>
+      <div class="row">
+        <button id="btn-decode" class="secondary">解码到上面</button>
+        <button id="btn-visualize" class="secondary">可视化查看</button>
+        <button id="btn-copyzw">复制当前零宽字符</button>
+      </div>
+      <p class="muted">提示：不可见是正常的。长度：<span id="zw-len" class="mono">0</span> 字符。</p>
+      <div id="visual" class="muted" style="display:none;margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <div class="tips">
+        <strong>用法</strong>：在上方输入任意文本，点“生成并复制”，然后把得到的（看不见的）字符串粘贴到 <em>微软账号</em> 的“姓/Last name”字段即可。若网站对零宽字符做清洗，这个方法可能无效。
+      </div>
+    </div>
+
+    <p class="footer">Made for local/offline use · 不上传任何数据。</p>
+  </div>
+
+<script>
+(function(){
+  // 零宽映射
+  const MAP = {
+    ZERO: '\u200B',   // 0
+    ONE:  '\u200C',   // 1
+    SEP:  '\u200D',   // 字节分隔
+    WRAP: '\u2060'    // 首尾边界（便于解码定位）
+  };
+
+  const el = {
+    plain: document.getElementById('plain'),
+    zw: document.getElementById('zw'),
+    btnEncode: document.getElementById('btn-encode'),
+    btnCopyZW: document.getElementById('btn-copyzw'),
+    btnDecode: document.getElementById('btn-decode'),
+    btnVisual: document.getElementById('btn-visualize'),
+    btnClear: document.getElementById('btn-clear'),
+    status: document.getElementById('encode-status'),
+    visual: document.getElementById('visual'),
+    len: document.getElementById('zw-len')
+  };
+
+  function encodeToZW(text){
+    const bytes = new TextEncoder().encode(text);
+    let out = MAP.WRAP;
+    for (let i = 0; i < bytes.length; i++){
+      const bits = bytes[i].toString(2).padStart(8,'0');
+      for (const b of bits) out += (b === '1') ? MAP.ONE : MAP.ZERO;
+      if (i < bytes.length - 1) out += MAP.SEP;
+    }
+    out += MAP.WRAP;
+    return out;
+  }
+
+  function decodeFromZW(zw){
+    const clean = zw.replace(/[^\u200B\u200C\u200D\u2060]/g,'').replace(new RegExp(MAP.WRAP,'g'), '');
+    if (!clean) return '';
+    const chunks = clean.split(MAP.SEP).filter(Boolean);
+    const bytes = chunks.map(bits => parseInt([...bits].map(ch => ch === MAP.ONE ? '1' : '0').join(''), 2));
+    return new TextDecoder().decode(new Uint8Array(bytes));
+  }
+
+  function visualizeZW(zw){
+    // 将零宽字符映射成可见符号便于检查：0->· 1->• 分隔->|
+    const s = zw.replace(/[^\u200B\u200C\u200D\u2060]/g,'')
+                .replace(new RegExp(MAP.WRAP, 'g'), '')
+                .replace(new RegExp(MAP.ZERO, 'g'), '·')
+                .replace(new RegExp(MAP.ONE, 'g'), '•')
+                .replace(new RegExp(MAP.SEP, 'g'), '|');
+    return s || '(空)';
+  }
+
+  async function copy(text){
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch(e) {
+      // 兼容不允许 clipboard 的环境
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); return true; } catch(_) { return false; }
+      finally { document.body.removeChild(ta); }
+    }
+  }
+
+  function updateLen(){ el.len.textContent = (el.zw.value || '').length; }
+
+  // 事件绑定
+  el.btnEncode.addEventListener('click', async () => {
+    const t = el.plain.value || '';
+    const zw = encodeToZW(t);
+    el.zw.value = zw; updateLen();
+    const ok = await copy(zw);
+    el.status.innerHTML = ok ? '<span class="ok">已生成并复制到剪贴板（看不见是正常的）</span>' : '<span class="warn">已生成，但复制失败：请手动全选复制</span>';
+  });
+
+  el.btnCopyZW.addEventListener('click', async () => {
+    const ok = await copy(el.zw.value || '');
+    el.status.innerHTML = ok ? '<span class="ok">零宽字符已复制</span>' : '<span class="warn">复制失败：请手动全选复制</span>';
+  });
+
+  el.btnDecode.addEventListener('click', () => {
+    const plain = decodeFromZW(el.zw.value || '');
+    el.plain.value = plain;
+    el.status.textContent = '已解码到上方文本框';
+  });
+
+  el.btnVisual.addEventListener('click', () => {
+    const visible = el.visual.style.display !== 'none';
+    if (visible) {
+      el.visual.style.display = 'none';
+      el.btnVisual.textContent = '可视化查看';
+    } else {
+      el.visual.textContent = visualizeZW(el.zw.value || '');
+      el.visual.style.display = 'block';
+      el.btnVisual.textContent = '隐藏可视化';
+    }
+  });
+
+  el.btnClear.addEventListener('click', () => {
+    el.plain.value=''; el.zw.value=''; el.status.textContent=''; el.visual.style.display='none'; updateLen();
+  });
+
+  el.zw.addEventListener('input', updateLen);
+  updateLen();
+})();
+</script>
+</body>
+</html>

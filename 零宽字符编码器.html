@@ -1,0 +1,106 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>零宽字符编码器</title>
+<style>
+  body{font:16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;max-width:720px;margin:40px auto;padding:0 16px}
+  textarea,input,button{width:100%;box-sizing:border-box;padding:12px;border-radius:12px;border:1px solid #ddd;outline:none}
+  button{cursor:pointer;margin-top:8px}
+  .muted{color:#666;font-size:14px}
+</style>
+
+<h1>零宽字符编码器 / 解码器</h1>
+
+<h3>要隐藏的明文</h3>
+<textarea id="plain" rows="4" placeholder="随便写点什么"></textarea>
+<button onclick="toZW()">生成零宽字符（复制到剪贴板）</button>
+
+<h3>零宽字符（粘贴到这里可解码）</h3>
+<textarea id="zw" rows="4" placeholder="把不可见字符粘到这里"></textarea>
+<button onclick="fromZW()">解码</button>
+
+<div id="error" class="muted" style="color:#b00020;margin-top:8px;display:none"></div>
+
+<h3>使用说明</h3>
+<ol>
+  <li>在“要隐藏的明文”中输入文本，点击“生成零宽字符”。</li>
+  <li>生成结果会尝试自动复制到剪贴板；若失败，请手动全选复制。</li>
+  <li>将结果粘贴到支持文本的输入框（示例：某些网站的姓名字段）。</li>
+  <li>解码时，将含有不可见字符的文本粘贴到“零宽字符”区域并点击“解码”。</li>
+  <li>若解码报错，说明文本被修改、截断或目标系统清除了不可见字符。</li>
+  <li>本工具在浏览器本地运行，不会上传任何内容。</li>
+  <li>建议使用现代浏览器（Chromium/Firefox/Safari 最新版本）。</li>
+  
+</ol>
+<p class="muted">提示：把“生成”的结果粘到微软账号的“姓”字段也可实现隐写。</p>
+
+<script>
+const MAP = { // 映射与标记
+  ZERO: '\u200B',      // 0
+  ONE:  '\u200C',      // 1
+  SEP:  '\u200D',      // 字节分隔
+  WRAP: '\u2060'       // 边界（首尾各一个）
+};
+
+function encodeToZW(text){
+  const bytes = new TextEncoder().encode(text);
+  let out = MAP.WRAP;
+  for (let i=0;i<bytes.length;i++){
+    const bits = bytes[i].toString(2).padStart(8,'0');
+    for (const b of bits) out += (b === '1') ? MAP.ONE : MAP.ZERO;
+    if (i < bytes.length - 1) out += MAP.SEP;
+  }
+  out += MAP.WRAP;
+  return out;
+}
+
+function decodeFromZW(zw){
+  // 只保留我们定义过的零宽字符，并去掉边界
+  const clean = zw.replace(/[^\u200B\u200C\u200D\u2060]/g,'').replace(/\u2060/g,'');
+  if (!clean) return '';
+  const chunks = clean.split(MAP.SEP).filter(Boolean);
+  if (!chunks.length) return '';
+  for (const bits of chunks){
+    // 仅允许 ZERO/ONE 构成字节
+    for (const ch of bits){
+      if (ch !== MAP.ZERO && ch !== MAP.ONE) {
+        throw new Error('解码失败：包含未定义的零宽字符。');
+      }
+    }
+    // 每个字节必须为 8 位
+    if (bits.length !== 8){
+      throw new Error('解码失败：字节长度异常，数据可能被截断或篡改。');
+    }
+  }
+  const bytes = chunks.map(bits => parseInt([...bits].map(ch => ch === MAP.ONE ? '1' : '0').join(''), 2));
+  if (bytes.some(b => Number.isNaN(b) || b < 0 || b > 255)){
+    throw new Error('解码失败：字节数据无效。');
+  }
+  return new TextDecoder().decode(new Uint8Array(bytes));
+}
+
+async function toZW(){
+  const t = document.getElementById('plain').value || '';
+  const zw = encodeToZW(t);
+  const ta = document.getElementById('zw');
+  ta.value = zw;
+  try {
+    await navigator.clipboard.writeText(zw);
+    alert('已复制到剪贴板（看不见是正常的）');
+  } catch {
+    alert('已生成，但复制失败：请手动全选复制。');
+  }
+}
+function fromZW(){
+  const zw = document.getElementById('zw').value || '';
+  const err = document.getElementById('error');
+  err.style.display = 'none';
+  err.textContent = '';
+  try {
+    const plain = decodeFromZW(zw);
+    document.getElementById('plain').value = plain;
+  } catch (e) {
+    err.textContent = (e && e.message) ? e.message : '解码失败：输入格式不正确或数据已损坏。';
+    err.style.display = 'block';
+  }
+}
+</script>
